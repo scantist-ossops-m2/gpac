@@ -32,7 +32,7 @@
 
 #include "ff_common.h"
 
-#if AV_VERSION_INT(LIBAVCODEC_VERSION_MAJOR, LIBAVCODEC_VERSION_MINOR, 0) < AV_VERSION_INT(59, 24, 0)
+#if (LIBAVUTIL_VERSION_MAJOR < 59)
 #define _avf_dur	pkt_duration
 #else
 #define _avf_dur	duration
