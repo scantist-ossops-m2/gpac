@@ -2100,7 +2100,7 @@ GF_Err ffmpeg_codec_par_from_gpac(GF_FilterPid *pid, AVCodecParameters *codecpar
 		p = gf_filter_pid_get_property(pid, GF_PROP_PID_NUM_CHANNELS);
 		if (p) {
 			nb_ch = p->value.uint;
-#if FFMPEG_OLD_CHLAYOUT
+#ifdef FFMPEG_OLD_CHLAYOUT
 			codecpar->channels = p->value.uint;
 #else
 			codecpar->ch_layout.order = AV_CHANNEL_ORDER_NATIVE;
@@ -2123,7 +2123,7 @@ GF_Err ffmpeg_codec_par_from_gpac(GF_FilterPid *pid, AVCodecParameters *codecpar
 			ch_layout = p->value.longuint;
 		else if (nb_ch==2)
 			ch_layout = GF_AUDIO_CH_FRONT_LEFT|GF_AUDIO_CH_FRONT_RIGHT;
-#if FFMPEG_OLD_CHLAYOUT
+#ifdef FFMPEG_OLD_CHLAYOUT
 		codecpar->channel_layout = ffmpeg_channel_layout_from_gpac(ch_layout);
 #else
 		codecpar->ch_layout.u.mask = ffmpeg_channel_layout_from_gpac(ch_layout);
