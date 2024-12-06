@@ -2973,9 +2973,6 @@ GF_Err gf_fs_get_filter_stats(GF_FilterSession *session, u32 idx, GF_FilterStats
 		if ((f->num_input_pids!=1) && f->num_output_pids)
 			continue;
 
-		if (!pidi->pid)
-			continue;
-
 		if (!stats->codecid)
 			stats->codecid = pidi->pid->codecid;
 		if (!stats->stream_type)
