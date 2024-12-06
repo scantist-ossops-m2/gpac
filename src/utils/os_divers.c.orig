@@ -1903,11 +1903,6 @@ GF_Err gf_bin128_parse(char *string, bin128 value)
 			sscanf(szV, "%x", &v);
 			value[i] = v;
 			i++;
-			if (i > 15) {
-				// force error check below
-				i++;
-				break;
-			}
 		}
 	}
 	if (i != 16) {
