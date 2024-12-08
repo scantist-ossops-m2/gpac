@@ -2013,6 +2013,11 @@ static void gf_m2ts_process_tdt_tot(GF_M2TS_Demuxer *ts, GF_M2TS_SECTION_ES *tdt
 		return;
 	}
 
+	if (data_size < 5) {
+		GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[MPEG-2 TS] Section data size too small to read date (len: %u)\n", data_size));
+		return;
+	}
+
 	/*UTC_time - see annex C of DVB-SI ETSI EN 300468*/
 	dvb_decode_mjd_date(data[0]*256 + data[1], &(time_table->year), &(time_table->month), &(time_table->day));
 	time_table->hour   = 10*((data[2]&0xf0)>>4) + (data[2]&0x0f);
