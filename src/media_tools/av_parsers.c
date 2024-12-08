@@ -3046,7 +3046,8 @@ s32 gf_media_avc_parse_nalu(GF_BitStream *bs, u32 nal_hdr, AVCState *avc)
 			ret = 1;
 			break;
 		}
-		assert(avc->s_info.sps);
+		if (!avc->s_info.sps)
+			return -1;
 
 		if (avc->s_info.sps->poc_type == n_state.sps->poc_type) {
 			if (!avc->s_info.sps->poc_type) {
