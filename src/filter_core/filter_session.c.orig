@@ -2906,9 +2906,6 @@ GF_Err gf_fs_get_filter_stats(GF_FilterSession *session, u32 idx, GF_FilterStats
 		if (pidi->pid->stream_type==GF_STREAM_FILE)
 			stats->type = GF_FS_STATS_FILTER_DEMUX;
 
-		if (!pidi->pid)
-			continue;
-
 		if (!stats->codecid)
 			stats->codecid = pidi->pid->codecid;
 		if (!stats->stream_type)
