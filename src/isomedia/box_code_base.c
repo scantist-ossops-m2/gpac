@@ -2806,7 +2806,17 @@ GF_Err iods_box_read(GF_Box *s, GF_BitStream *bs)
 	e = gf_odf_desc_read(desc, descSize, &ptr->descriptor);
 	//OK, free our desc
 	gf_free(desc);
-	return e;
+
+	if (e) return e;
+	switch (ptr->descriptor->tag) {
+	case GF_ODF_ISOM_OD_TAG:
+	case GF_ODF_ISOM_IOD_TAG:
+		break;
+	default:
+		GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[iso file] Invalid descriptor in iods, tag %u found but only %u or %u allowed\n", ptr->descriptor->tag, GF_ODF_ISOM_IOD_TAG, GF_ODF_ISOM_OD_TAG ));
+		return GF_ISOM_INVALID_FILE;
+	}
+	return GF_OK;
 }
 
 GF_Box *iods_box_new()
@@ -5028,6 +5038,32 @@ GF_Err stbl_box_read(GF_Box *s, GF_BitStream *bs)
 		if (!ptr->TimeToSample->nb_entries || !ptr->SampleToChunk->nb_entries)
 			return GF_ISOM_INVALID_FILE;
 	}
+	u32 i, max_chunks=0;
+	if (ptr->ChunkOffset->type == GF_ISOM_BOX_TYPE_STCO) {
+		max_chunks = ((GF_ChunkOffsetBox *)ptr->ChunkOffset)->nb_entries;
+	}
+	else if (ptr->ChunkOffset->type == GF_ISOM_BOX_TYPE_CO64) {
+		max_chunks = ((GF_ChunkOffsetBox *)ptr->ChunkOffset)->nb_entries;
+	}
+
+	//sanity check on stsc vs chunk offset tables
+	for (i=0; i<ptr->SampleToChunk->nb_entries; i++) {
+		GF_StscEntry *ent = &ptr->SampleToChunk->entries[i];
+		if (!i && (ent->firstChunk!=1)) {
+			GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[iso file] first_chunk of first entry shall be 1 but is %u\n", ent->firstChunk));
+			return GF_ISOM_INVALID_FILE;
+		}
+		if (ptr->SampleToChunk->entries[i].firstChunk > max_chunks) {
+			GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[iso file] first_chunk is %u but number of chunks defined %u\n", ptr->SampleToChunk->entries[i].firstChunk, max_chunks));
+			return GF_ISOM_INVALID_FILE;
+		}
+		if (i+1 == ptr->SampleToChunk->nb_entries) break;
+		GF_StscEntry *next_ent = &ptr->SampleToChunk->entries[i+1];
+		if (next_ent->firstChunk < ent->firstChunk) {
+			GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[iso file] first_chunk (%u) for entry %u is greater than first_chunk (%u) for entry %u\n", i+1, ent->firstChunk, i+2, next_ent->firstChunk));
+			return GF_ISOM_INVALID_FILE;
+		}
+	}
 	return GF_OK;
 }
 
@@ -6645,6 +6681,8 @@ GF_Err trak_box_size(GF_Box *s)
 	GF_TrackBox *ptr = (GF_TrackBox *)s;
 
 	if (ptr->sample_encryption && ptr->sample_encryption->load_needed) {
+		if (!ptr->moov || !!ptr->moov->mov || !ptr->moov->mov->movieFileMap)
+			return GF_ISOM_INVALID_FILE;
 		GF_Err e = senc_Parse(ptr->moov->mov->movieFileMap->bs, ptr, NULL, ptr->sample_encryption);
 		if (e) return e;
 	}
@@ -10613,10 +10651,12 @@ void gitn_box_del(GF_Box *s)
 	u32 i;
 	GroupIdToNameBox *ptr = (GroupIdToNameBox *)s;
 	if (ptr == NULL) return;
-	for (i=0; i<ptr->nb_entries; i++) {
-		if (ptr->entries[i].name) gf_free(ptr->entries[i].name);
+	if (ptr->entries) {
+		for (i=0; i<ptr->nb_entries; i++) {
+			if (ptr->entries[i].name) gf_free(ptr->entries[i].name);
+		}
+		gf_free(ptr->entries);
 	}
-	if (ptr->entries) gf_free(ptr->entries);
 	gf_free(ptr);
 }
 
@@ -11741,7 +11781,14 @@ GF_Err chnl_box_read(GF_Box *s,GF_BitStream *bs)
 	GF_ChannelLayoutBox *ptr = (GF_ChannelLayoutBox *) s;
 
 	ISOM_DECREASE_SIZE(s, 1)
-	ptr->layout.stream_structure = gf_bs_read_u8(bs);
+	if (ptr->version==0) {
+		ptr->layout.stream_structure = gf_bs_read_u8(bs);
+	} else {
+		ptr->layout.stream_structure = gf_bs_read_int(bs, 4);
+		ptr->layout.format_ordering = gf_bs_read_int(bs, 4);
+		ISOM_DECREASE_SIZE(s, 1)
+		ptr->layout.base_channel_count = gf_bs_read_u8(bs);
+	}
 	if (ptr->layout.stream_structure & 1) {
 		ISOM_DECREASE_SIZE(s, 1)
 		ptr->layout.definedLayout = gf_bs_read_u8(bs);
@@ -11749,7 +11796,14 @@ GF_Err chnl_box_read(GF_Box *s,GF_BitStream *bs)
 			u32 remain = (u32) ptr->size;
 			if (ptr->layout.stream_structure & 2) remain--;
 			ptr->layout.channels_count = 0;
+			u32 nb_channels = 0;
+			if (ptr->version) {
+				ISOM_DECREASE_SIZE(s, 1)
+				nb_channels = gf_bs_read_u8(bs);
+			}
 			while (remain) {
+				if (ptr->layout.channels_count==64) return GF_ISOM_INVALID_FILE;
+
 				ISOM_DECREASE_SIZE(s, 1)
 				ptr->layout.layouts[ptr->layout.channels_count].position = gf_bs_read_u8(bs);
 				remain--;
@@ -11759,13 +11813,31 @@ GF_Err chnl_box_read(GF_Box *s,GF_BitStream *bs)
 					ptr->layout.layouts[ptr->layout.channels_count].elevation = gf_bs_read_int(bs, 8);
 					remain-=3;
 				}
+				ptr->layout.channels_count++;
+				if (ptr->version) {
+					nb_channels--;
+					if (!nb_channels) break;
+				}
 			}
 		} else {
-			ISOM_DECREASE_SIZE(s, 8)
-			ptr->layout.omittedChannelsMap = gf_bs_read_u64(bs);
+			if (ptr->version==0) {
+				ISOM_DECREASE_SIZE(s, 8)
+				ptr->layout.omittedChannelsMap = gf_bs_read_u64(bs);
+				ptr->layout.omitted_channels_present = 1;
+				ptr->layout.channel_order_definition = 0;
+			} else {
+				ISOM_DECREASE_SIZE(s, 1)
+				gf_bs_read_int(bs, 4);
+				ptr->layout.channel_order_definition = gf_bs_read_int(bs, 3);
+				ptr->layout.omitted_channels_present = gf_bs_read_int(bs, 1);
+				if (ptr->layout.omitted_channels_present) {
+					ISOM_DECREASE_SIZE(s, 8)
+					ptr->layout.omittedChannelsMap = gf_bs_read_u64(bs);
+				}
+			}
 		}
 	}
-	if (ptr->layout.stream_structure & 2) {
+	if ((ptr->version==0) && (ptr->layout.stream_structure & 2)) {
 		ISOM_DECREASE_SIZE(s, 1)
 		ptr->layout.object_count = gf_bs_read_u8(bs);
 	}
@@ -11789,10 +11861,20 @@ GF_Err chnl_box_write(GF_Box *s, GF_BitStream *bs)
 	if (e) return e;
 
 	gf_bs_write_u8(bs, ptr->layout.stream_structure);
+	if (ptr->version==0) {
+		gf_bs_write_u8(bs, ptr->layout.stream_structure);
+	} else {
+		gf_bs_write_int(bs, ptr->layout.stream_structure, 4);
+		gf_bs_write_int(bs, ptr->layout.format_ordering, 4);
+		gf_bs_write_u8(bs, ptr->layout.base_channel_count);
+	}
 	if (ptr->layout.stream_structure & 1) {
 		gf_bs_write_u8(bs, ptr->layout.definedLayout);
 		if (ptr->layout.definedLayout==0) {
 			u32 i;
+			if (ptr->version==1) {
+				gf_bs_write_u8(bs, ptr->layout.channels_count);
+			}
 			for (i=0; i<ptr->layout.channels_count; i++) {
 				gf_bs_write_u8(bs, ptr->layout.layouts[i].position);
 				if (ptr->layout.layouts[i].position==126) {
@@ -11801,10 +11883,18 @@ GF_Err chnl_box_write(GF_Box *s, GF_BitStream *bs)
 				}
 			}
 		} else {
-			gf_bs_write_u64(bs, ptr->layout.omittedChannelsMap);
+			if (ptr->version==1) {
+				gf_bs_write_int(bs, 0, 4);
+				gf_bs_write_int(bs, ptr->layout.channel_order_definition, 3);
+				gf_bs_write_int(bs, ptr->layout.omitted_channels_present, 1);
+				if (ptr->layout.omitted_channels_present)
+					gf_bs_write_u64(bs, ptr->layout.omittedChannelsMap);
+			} else {
+				gf_bs_write_u64(bs, ptr->layout.omittedChannelsMap);
+			}
 		}
 	}
-	if (ptr->layout.stream_structure & 2) {
+	if ((ptr->version==0) && (ptr->layout.stream_structure & 2)) {
 		gf_bs_write_u8(bs, ptr->layout.object_count);
 	}
 	return GF_OK;
@@ -11814,20 +11904,28 @@ GF_Err chnl_box_size(GF_Box *s)
 {
 	GF_ChannelLayoutBox *ptr = (GF_ChannelLayoutBox *) s;
 	s->size += 1;
+	if (ptr->version==1) s->size++;
 	if (ptr->layout.stream_structure & 1) {
 		s->size += 1;
 		if (ptr->layout.definedLayout==0) {
 			u32 i;
+			if (ptr->version==1) s->size++;
 			for (i=0; i<ptr->layout.channels_count; i++) {
 				s->size+=1;
 				if (ptr->layout.layouts[i].position==126)
 					s->size+=3;
 			}
 		} else {
-			s->size += 8;
+			if (ptr->version==1) {
+				s->size += 1;
+				if (ptr->layout.omitted_channels_present)
+					s->size += 8;
+			} else {
+				s->size += 8;
+			}
 		}
 	}
-	if (ptr->layout.stream_structure & 2) {
+	if ((ptr->version==0) && (ptr->layout.stream_structure & 2)) {
 		s->size += 1;
 	}
 	return GF_OK;

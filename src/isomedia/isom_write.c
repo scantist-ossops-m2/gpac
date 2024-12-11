@@ -2386,6 +2386,10 @@ GF_Err gf_isom_set_edit(GF_ISOFile *movie, u32 trackNumber, u64 EditTime, u64 Ed
 	e = CanAccessMovie(movie, GF_ISOM_OPEN_WRITE);
 	if (e) return e;
 
+	if (!layout) return GF_BAD_PARAM;
+	if ((layout->stream_structure & 1) && (layout->definedLayout==0) && (layout->channels_count>=64))
+		return GF_BAD_PARAM;
+
 	trak = gf_isom_get_track_from_file(movie, trackNumber);
 	if (!trak) return GF_BAD_PARAM;
 
@@ -2640,6 +2644,7 @@ GF_Err gf_isom_remove_track(GF_ISOFile *movie, u32 trackNumber)
 	i=0;
 	while ((trak = (GF_TrackBox *)gf_list_enum(movie->moov->trackList, &i))) {
 		if (trak->Media->handler->handlerType != GF_ISOM_MEDIA_OD) continue;
+
 		//this is an OD track...
 		j = gf_isom_get_sample_count(movie, i);
 		for (k=0; k < j; k++) {
@@ -2663,7 +2668,6 @@ GF_Err gf_isom_remove_track(GF_ISOFile *movie, u32 trackNumber)
 	//note that we don't touch scal references, as we don't want to rewrite AVC/HEVC samples ...
 	i=0;
 	while ((trak = (GF_TrackBox *)gf_list_enum(movie->moov->trackList, &i))) {
-		if (trak == the_trak) continue;
 		if (! trak->References || ! gf_list_count(trak->References->child_boxes)) continue;
 
 		j=0;
@@ -5224,6 +5228,7 @@ GF_Err gf_isom_set_extraction_slc(GF_ISOFile *the_file, u32 trackNumber, u32 Str
 	GF_SampleEntryBox *entry;
 	GF_Err e;
 	GF_SLConfig **slc;
+	GF_ESDBox *esds;
 
 	trak = gf_isom_get_track_from_file(the_file, trackNumber);
 	if (!trak) return GF_BAD_PARAM;
@@ -5234,15 +5239,21 @@ GF_Err gf_isom_set_extraction_slc(GF_ISOFile *the_file, u32 trackNumber, u32 Str
 	//we must be sure we are not using a remote ESD
 	switch (entry->type) {
 	case GF_ISOM_BOX_TYPE_MP4S:
-		if (((GF_MPEGSampleEntryBox *)entry)->esd->desc->slConfig->predefined != SLPredef_MP4) return GF_BAD_PARAM;
+		esds = ((GF_MPEGSampleEntryBox *)entry)->esd;
+		if (!esds || !esds->desc || !esds->desc->slConfig || (esds->desc->slConfig->predefined != SLPredef_MP4))
+			return GF_ISOM_INVALID_FILE;
 		slc = & ((GF_MPEGSampleEntryBox *)entry)->slc;
 		break;
 	case GF_ISOM_BOX_TYPE_MP4A:
-		if (((GF_MPEGAudioSampleEntryBox *)entry)->esd->desc->slConfig->predefined != SLPredef_MP4) return GF_BAD_PARAM;
+		esds = ((GF_MPEGAudioSampleEntryBox *)entry)->esd;
+		if (!esds || !esds->desc || !esds->desc->slConfig || (esds->desc->slConfig->predefined != SLPredef_MP4))
+			return GF_ISOM_INVALID_FILE;
 		slc = & ((GF_MPEGAudioSampleEntryBox *)entry)->slc;
 		break;
 	case GF_ISOM_BOX_TYPE_MP4V:
-		if (((GF_MPEGVisualSampleEntryBox *)entry)->esd->desc->slConfig->predefined != SLPredef_MP4) return GF_BAD_PARAM;
+		esds = ((GF_MPEGVisualSampleEntryBox *)entry)->esd;
+		if (!esds || !esds->desc || !esds->desc->slConfig || (esds->desc->slConfig->predefined != SLPredef_MP4))
+			return GF_ISOM_INVALID_FILE;
 		slc = & ((GF_MPEGVisualSampleEntryBox *)entry)->slc;
 		break;
 	default:

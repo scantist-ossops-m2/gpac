@@ -256,7 +256,7 @@ static void adts_dmx_check_dur(GF_Filter *filter, GF_ADTSDmxCtx *ctx)
 			gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_DURATION, & PROP_FRAC64(ctx->duration));
 		}
 	}
-	
+
 	p = gf_filter_pid_get_property(ctx->ipid, GF_PROP_PID_FILE_CACHED);
 	if (p && p->value.boolean) ctx->file_loaded = GF_TRUE;
 	gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_CAN_DATAREF, & PROP_BOOL(GF_TRUE ) );
@@ -709,6 +709,12 @@ GF_Err adts_dmx_process(GF_Filter *filter)
 		}
 
 		if (!ctx->in_seek) {
+
+			if (sync_pos + offset + size > remain) {
+				GF_LOG(GF_LOG_WARNING, GF_LOG_MEDIA, ("[ADTSDmx] truncated frame\n"));
+				break;
+			}
+
 			dst_pck = gf_filter_pck_new_alloc(ctx->opid, size, &output);
 			if (ctx->src_pck) gf_filter_pck_merge_properties(ctx->src_pck, dst_pck);
 

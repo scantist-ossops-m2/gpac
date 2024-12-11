@@ -3889,10 +3889,8 @@ void gf_av1_reset_state(AV1State *state, Bool is_destroy)
 		gf_list_del(l1);
 		gf_list_del(l2);
 		if (state->bs) {
-			if (gf_bs_get_position(state->bs)) {
-				u32 size;
-				gf_bs_get_content_no_truncate(state->bs, &state->frame_obus, &size, &state->frame_obus_alloc);
-			}
+			u32 size;
+			gf_bs_get_content_no_truncate(state->bs, &state->frame_obus, &size, &state->frame_obus_alloc);
 			gf_bs_del(state->bs);
 		}
 		state->bs = NULL;
@@ -5090,6 +5088,7 @@ static s32 gf_media_avc_read_sps_bs_internal(GF_BitStream *bs, AVCState *avc, u3
 		sps->offset_for_top_to_bottom_field = gf_bs_get_se(bs);
 		sps->poc_cycle_length = gf_bs_get_ue(bs);
 		if (sps->poc_cycle_length > GF_ARRAY_LENGTH(sps->offset_for_ref_frame)) {
+			sps->poc_cycle_length = 255;
 			GF_LOG(GF_LOG_ERROR, GF_LOG_CODING, ("[avc-h264] offset_for_ref_frame overflow from poc_cycle_length\n"));
 			return -1;
 		}
@@ -5997,7 +5996,8 @@ s32 gf_media_avc_parse_nalu(GF_BitStream *bs, AVCState *avc)
 			ret = 1;
 			break;
 		}
-		assert(avc->s_info.sps);
+		if (!avc->s_info.sps)
+			return -1;
 
 		if (avc->s_info.sps->poc_type == n_state.sps->poc_type) {
 			if (!avc->s_info.sps->poc_type) {
@@ -7222,6 +7222,11 @@ static Bool hevc_parse_vps_extension(HEVC_VPS *vps, GF_BitStream *bs)
 	}
 	vps->num_output_layer_sets = num_add_olss + NumLayerSets;
 
+	if (vps->num_output_layer_sets > MAX_LHVC_LAYERS) {
+		GF_LOG(GF_LOG_ERROR, GF_LOG_CODING, ("[HEVC] Wrong number of output layer sets in VPS %d, max %d supported\n", vps->num_output_layer_sets, MAX_LHVC_LAYERS));
+		vps->num_output_layer_sets = 1;
+		return GF_FALSE;
+	}
 
 	layer_set_idx_for_ols_minus1[0] = 1;
 	vps->output_layer_flag[0][0] = 1;

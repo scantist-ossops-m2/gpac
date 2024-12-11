@@ -677,7 +677,17 @@ GF_Descriptor *gf_isom_get_root_od(GF_ISOFile *movie)
 
 	//duplicate our descriptor
 	movie->LastError = gf_odf_desc_copy((GF_Descriptor *) movie->moov->iods->descriptor, &desc);
-	if (movie->LastError) return NULL;
+	if (movie->LastError) {
+		if (od) {
+			gf_list_del(od->ESDescriptors);
+			gf_free(od);
+		}
+		if (iod) {
+			gf_list_del(iod->ESDescriptors);
+			gf_free(iod);
+		}
+		return NULL;
+	}
 
 	if (!useIOD) {
 		isom_od = (GF_IsomObjectDescriptor *)desc;
@@ -3802,6 +3812,7 @@ u32 gf_isom_guess_specification(GF_ISOFile *file)
 			case GF_ISOM_SUBTYPE_MPEG4_CRYP:
 			{
 				GF_DecoderConfig *dcd = gf_isom_get_decoder_config(file, i+1, 1);
+				if (!dcd) break;
 				switch (dcd->streamType) {
 				case GF_STREAM_VISUAL:
 					if (dcd->objectTypeIndication==GF_CODECID_MPEG4_PART2) nb_m4v++;

@@ -233,7 +233,7 @@ char *gf_text_get_utf8_line(char *szLine, u32 lineSize, FILE *txt_in, s32 unicod
 {
 	u32 i, j, len;
 	char *sOK;
-	char szLineConv[1024];
+	char szLineConv[2048];
 	unsigned short *sptr;
 
 	memset(szLine, 0, sizeof(char)*lineSize);
@@ -284,6 +284,10 @@ char *gf_text_get_utf8_line(char *szLine, u32 lineSize, FILE *txt_in, s32 unicod
 			szLineConv[j] = szLine[i];
 			j++;
 		}
+		if ( j >= lineSize ) {
+			GF_LOG(GF_LOG_DEBUG, GF_LOG_PARSER, ("[TXTIn] UT8 converted line too long for buffer (len: %d, buffer: %d)\n", j, lineSize));
+			j = lineSize-1 ;
+		}
 		szLineConv[j] = 0;
 		strcpy(szLine, szLineConv);
 		return sOK;
@@ -305,7 +309,7 @@ char *gf_text_get_utf8_line(char *szLine, u32 lineSize, FILE *txt_in, s32 unicod
 		}
 	}
 	sptr = (u16 *)szLine;
-	i = (u32) gf_utf8_wcstombs(szLineConv, 1024, (const unsigned short **) &sptr);
+	i = (u32) gf_utf8_wcstombs(szLineConv, 2048, (const unsigned short **) &sptr);
 	szLineConv[i] = 0;
 	strcpy(szLine, szLineConv);
 	/*this is ugly indeed: since input is UTF16-LE, there are many chances the gf_fgets never reads the \0 after a \n*/
@@ -1795,6 +1799,8 @@ static GF_Err gf_text_process_sub(GF_Filter *filter, GF_TXTIn *ctx)
 		while (szLine[i+1] && szLine[i+1]!='}') {
 			szTime[i] = szLine[i+1];
 			i++;
+			if (i>=19)
+				break;
 		}
 		szTime[i] = 0;
 		ctx->start = atoi(szTime);
@@ -2971,11 +2977,10 @@ void txtin_finalize(GF_Filter *filter)
 static const char *txtin_probe_data(const u8 *data, u32 data_size, GF_FilterProbeScore *score)
 {
 	char *dst = NULL;
-	u8 *res;
-
-	res = gf_utf_get_utf8_string_from_bom((char *)data, data_size, &dst);
-	if (res) data = res;
-
+	char *res=NULL;
+	GF_Err e = gf_utf_get_utf8_string_from_bom((char *)data, data_size, &dst, &res);
+	if (e) return NULL;
+	
 #define PROBE_OK(_score, _mime) \
 		*score = _score;\
 		if (dst) gf_free(dst);\

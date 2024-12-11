@@ -1330,7 +1330,8 @@ static GF_Err gf_isom_check_mvc(GF_ISOFile *the_file, GF_TrackBox *trak, GF_MPEG
 	return GF_OK;
 }
 
-static GF_AV1Config* AV1_DuplicateConfig(GF_AV1Config const * const cfg) {
+static GF_AV1Config* AV1_DuplicateConfig(GF_AV1Config const * const cfg)
+{
 	u32 i = 0;
 	GF_AV1Config *out = gf_malloc(sizeof(GF_AV1Config));
 
@@ -1374,7 +1375,7 @@ void AV1_RewriteESDescriptorEx(GF_MPEGVisualSampleEntryBox *av1, GF_MediaBox *md
 		av1->emul_esd->decoderConfig->avgBitrate = btrt->avgBitrate;
 		av1->emul_esd->decoderConfig->maxBitrate = btrt->maxBitrate;
 	}
-	if (av1->av1_config) {
+	if (av1->av1_config && av1->av1_config->config) {
 		GF_AV1Config *av1_cfg = AV1_DuplicateConfig(av1->av1_config->config);
 		if (av1_cfg) {
 			gf_odf_av1_cfg_write(av1_cfg, &av1->emul_esd->decoderConfig->decoderSpecificInfo->data, &av1->emul_esd->decoderConfig->decoderSpecificInfo->dataLength);
@@ -2275,7 +2276,7 @@ GF_AV1Config *gf_isom_av1_config_get(GF_ISOFile *the_file, u32 trackNumber, u32 
 	trak = gf_isom_get_track_from_file(the_file, trackNumber);
 	if (!trak || !trak->Media || !DescriptionIndex) return NULL;
 	entry = (GF_MPEGVisualSampleEntryBox*)gf_list_get(trak->Media->information->sampleTable->SampleDescription->child_boxes, DescriptionIndex - 1);
-	if (!entry || !entry->av1_config) return NULL;
+	if (!entry || !entry->av1_config|| !entry->av1_config->config) return NULL;
 	return AV1_DuplicateConfig(entry->av1_config->config);
 }
 
@@ -3156,8 +3157,10 @@ GF_Err gf_isom_oinf_read_entry(void *entry, GF_BitStream *bs)
 		op->output_layer_set_idx = gf_bs_read_u16(bs);
 		op->max_temporal_id = gf_bs_read_u8(bs);
 		op->layer_count = gf_bs_read_u8(bs);
-		if (op->layer_count > GF_ARRAY_LENGTH(op->layers_info))
+		if (op->layer_count > GF_ARRAY_LENGTH(op->layers_info)) {
+			gf_free(op);
 			return GF_NON_COMPLIANT_BITSTREAM;
+		}
 		for (j = 0; j < op->layer_count; j++) {
 			op->layers_info[j].ptl_idx = gf_bs_read_u8(bs);
 			op->layers_info[j].layer_id = gf_bs_read_int(bs, 6);

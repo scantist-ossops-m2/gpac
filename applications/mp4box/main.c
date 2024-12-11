@@ -1296,7 +1296,7 @@ GF_Err HintFile(GF_ISOFile *file, u32 MTUSize, u32 max_ptime, u32 rtp_rate, u32 
 
 		streamType = 0;
 		esd = gf_isom_get_esd(file, i+1, 1);
-		if (esd) {
+		if (esd && esd->decoderConfig) {
 			streamType = esd->decoderConfig->streamType;
 			if (!prev_ocr) {
 				prev_ocr = esd->OCRESID;
@@ -2648,6 +2648,14 @@ u32 mp4box_cleanup(u32 ret_code) {
 	}
 	if (logfile) gf_fclose(logfile);
 	gf_sys_close();
+
+#ifdef GPAC_MEMORY_TRACKING
+	if (mem_track && (gf_memory_size() || gf_file_handles_count() )) {
+		gf_log_set_tool_level(GF_LOG_MEMORY, GF_LOG_INFO);
+		gf_memory_print();
+	}
+#endif
+
 	return ret_code;
 }
 
